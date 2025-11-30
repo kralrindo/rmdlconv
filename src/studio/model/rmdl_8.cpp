@@ -96,7 +96,7 @@
 void ConvertRMDL8To10(char* pMDL, const std::string& pathIn, const std::string& pathOut)
 {
 	std::string modelName = std::filesystem::path(pathIn).filename().u8string();
-	printf("Upgrading model '%s' to subversion 12...\n", modelName.c_str());
+	printf("Upgrading model '%s' to subversion 10...\n", modelName.c_str());
 
 	std::string pathRMDL = ChangeExtension(pathIn, "rmdl");
 	std::string pathVTX = ChangeExtension(pathIn, "vtx");

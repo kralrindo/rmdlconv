@@ -5,6 +5,37 @@
 #include <studio/versions.h>
 #include <studio/studio.h>
 
+const char* DescribeSubVersion(eRMdlSubVersion subVersion)
+{
+	switch (subVersion)
+	{
+	case eRMdlSubVersion::VERSION_8:
+		return "8";
+	case eRMdlSubVersion::VERSION_9:
+		return "9";
+	case eRMdlSubVersion::VERSION_10:
+		return "10";
+	case eRMdlSubVersion::VERSION_11:
+		return "11";
+	case eRMdlSubVersion::VERSION_12:
+		return "12";
+	case eRMdlSubVersion::VERSION_12_1:
+		return "12.1";
+	case eRMdlSubVersion::VERSION_12_2:
+		return "12.2";
+	case eRMdlSubVersion::VERSION_13:
+		return "13";
+	case eRMdlSubVersion::VERSION_14:
+		return "14";
+	case eRMdlSubVersion::VERSION_15:
+		return "15";
+	case eRMdlSubVersion::VERSION_16:
+		return "16";
+	default:
+		return "unknown";
+	}
+}
+
 // fetch all the valid models from a given path
 // todo: this should support sequences
 void GetStudioModelFromPath(std::string& pathIn, std::vector<std::string>& pathOut)
@@ -133,7 +164,7 @@ void UpgradeStudioModelTo53(std::string& modelPath, const char* outputDir)
 	printf("\nFinished converting %zi models, exiting...\n", modelPaths.size());
 }
 
-void UpgradeStudioModelTo54(std::string& modelPath, const char* outputDir)
+void UpgradeStudioModelTo54(std::string& modelPath, const char* outputDir, eRMdlSubVersion defaultSubVersion)
 {
 	std::vector<std::string> modelPaths;
 
@@ -185,7 +216,7 @@ void UpgradeStudioModelTo54(std::string& modelPath, const char* outputDir)
 			//	ConvertRMDL8To10(pMDL.get(), path, pathOut);
 			//else if (subVersion == eRMdlSubVersion::VERSION_12_1)
 			//	ConvertRMDL120To10(pMDL.get(), fileSize, path, pathOut);
-			ConvertRMDL121To10(pMDL.get(), path, pathOut);
+			ConvertRMDL121To10(pMDL.get(), path, pathOut, defaultSubVersion);
 			break;
 		}
 		default:
@@ -199,7 +230,7 @@ void UpgradeStudioModelTo54(std::string& modelPath, const char* outputDir)
 }
 
 // handle target version input
-void UpgradeStudioModel(std::string& modelPath, int targetVersion, const char* outputDir)
+void UpgradeStudioModel(std::string& modelPath, int targetVersion, const char* outputDir, eRMdlSubVersion defaultSubVersion)
 {
 	switch (targetVersion)
 	{
@@ -207,7 +238,7 @@ void UpgradeStudioModel(std::string& modelPath, int targetVersion, const char* o
 		UpgradeStudioModelTo53(modelPath, outputDir);
 		break;
 	case MdlVersion::APEXLEGENDS:
-		UpgradeStudioModelTo54(modelPath, outputDir);
+		UpgradeStudioModelTo54(modelPath, outputDir, defaultSubVersion);
 		break;
 	default:
 		Error("Unsupported studio version!!! Exiting...\n");

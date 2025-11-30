@@ -1,6 +1,55 @@
 #include <pch.h>
 #include <studio/studio.h>
+#include <studio/common.h>
 #include <studio/versions.h>
+#include <cstdarg>
+#include <cstdio>
+
+bool g_isRigPhase = false;
+static constexpr bool kMuteRigPhaseLogs = false;
+static constexpr bool kPrefixRigPhaseLogs = true;
+StudioLogDomain g_logDomain = StudioLogDomain::MDL;
+
+StudioLogDomainScope::StudioLogDomainScope(StudioLogDomain newDomain)
+	: m_prev(g_logDomain)
+{
+	g_logDomain = newDomain;
+}
+
+StudioLogDomainScope::~StudioLogDomainScope()
+{
+	g_logDomain = m_prev;
+}
+const char* DescribeLogDomain()
+{
+	switch (g_logDomain)
+	{
+	case StudioLogDomain::VG:
+		return "[vg] ";
+	default:
+		return "[mdl] ";
+	}
+}
+
+void StudioLogf(const char* fmt, ...)
+{
+	if (g_isRigPhase && kMuteRigPhaseLogs)
+		return;
+
+	va_list args;
+	va_start(args, fmt);
+
+	if (kPrefixRigPhaseLogs)
+	{
+		if (!g_isRigPhase)
+			std::fputs(DescribeLogDomain(), stdout);
+		if (g_isRigPhase)
+			std::fputs("[rig] ", stdout);
+	}
+
+	std::vprintf(fmt, args);
+	va_end(args);
+}
 
 //-----------------------------------------------------------------------------
 // Collision data

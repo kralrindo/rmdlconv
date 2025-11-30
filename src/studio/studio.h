@@ -5,6 +5,9 @@
 
 #include <studio/optimize.h>
 
+extern bool g_isRigPhase;
+void StudioLogf(const char* fmt, ...);
+
 
 #define IDSTUDIOHEADER				(('T'<<24)+('S'<<16)+('D'<<8)+'I') // little-endian "IDST"
 #define IDSTUDIOANIMGROUPHEADER		(('G'<<24)+('A'<<16)+('D'<<8)+'I') // little-endian "IDAG"
@@ -4924,7 +4927,7 @@ static int ConvertAttachmentsToMDL(mstudioattachment_t* pOldAttachments, int num
 {
 	int index = g_model.pData - g_model.pBase;
 
-	printf("converting %i attachments...\n", numAttachments);
+	StudioLogf("converting %i attachments...\n", numAttachments);
 
 	for (int i = 0; i < numAttachments; ++i)
 	{
@@ -4950,7 +4953,7 @@ static int ConvertAttachmentTo54(mstudioattachment_t* pOldAttachments, int numAt
 {
 	int index = g_model.pData - g_model.pBase;
 
-	printf("converting %i attachments...\n", numAttachments);
+	StudioLogf("converting %i attachments...\n", numAttachments);
 
 	for (int i = 0; i < numAttachments; ++i)
 	{
@@ -4977,7 +4980,7 @@ static int ConvertPoseParams(mstudioposeparamdesc_t* pOldPoseParams, int numPose
 	//if (!isRig)
 	//	return;
 
-	printf("converting %i poseparams...\n", numPoseParams);
+	StudioLogf("converting %i poseparams...\n", numPoseParams);
 
 	for (int i = 0; i < numPoseParams; i++)
 	{
@@ -5003,7 +5006,7 @@ static int ConvertSrcBoneTransforms(mstudiosrcbonetransform_t* pOldBoneTransform
 {
 	int index = g_model.pData - g_model.pBase;
 
-	printf("converting %i bone transforms...\n", numSrcBoneTransforms);
+	StudioLogf("converting %i bone transforms...\n", numSrcBoneTransforms);
 
 	for (int i = 0; i < numSrcBoneTransforms; i++)
 	{
@@ -5030,7 +5033,7 @@ constexpr int boneDataSize = ((sizeof(int) * 2) + (sizeof(Vector) * 2) + sizeof(
 // mdl -> rmdl
 static void ConvertLinearBoneTableTo54(mstudiolinearbone_t* pOldLinearBone, char* pOldLinearBoneTable)
 {
-	printf("converting linear bone table...\n");
+	StudioLogf("converting linear bone table...\n");
 
 	g_model.hdrV54()->linearboneindex = g_model.pData - g_model.pBase;
 
@@ -5057,7 +5060,7 @@ static void ConvertLinearBoneTableTo54(mstudiolinearbone_t* pOldLinearBone, char
 // rmdl -> rmdl
 static void CopyLinearBoneTableTo54(const r5::v8::mstudiolinearbone_t* const pOldLinearBone)
 {
-	printf("copying linear bone table...\n");
+	StudioLogf("copying linear bone table...\n");
 
 	g_model.hdrV54()->linearboneindex = g_model.pData - g_model.pBase;
 
@@ -5071,7 +5074,7 @@ static void CopyLinearBoneTableTo54(const r5::v8::mstudiolinearbone_t* const pOl
 
 static void ConvertLinearBoneTableTo53(mstudiolinearbone_t* pOldLinearBone, char* pOldLinearBoneTable)
 {
-	printf("converting linear bone table...\n");
+	StudioLogf("converting linear bone table...\n");
 
 	g_model.hdrV53()->linearboneindex = g_model.pData - g_model.pBase;
 
@@ -5169,7 +5172,7 @@ static void ConvertSequenceHdr(r5::v8::mstudioseqdesc_t * out, r5::v8::mstudiose
 //
 static int ConvertSequenceActMods(r1::mstudioactivitymodifier_t* pOldActMods, int numActMods)
 {
-	printf("converting %i activitymodifiers...\n", numActMods);
+	StudioLogf("converting %i activitymodifiers...\n", numActMods);
 
 	int index = g_model.pData - g_model.pBase;
 
@@ -5195,7 +5198,7 @@ static int ConvertSequenceActMods(r1::mstudioactivitymodifier_t* pOldActMods, in
 //
 static int ConvertSequenceUnknown(r5::unkseqdata_t* pOldUnknown, int numUnknown)
 {
-	printf("converting %i unknown data...\n", numUnknown);
+	StudioLogf("converting %i unknown data...\n", numUnknown);
 
 	int index = g_model.pData - g_model.pBase;
 
@@ -5223,7 +5226,7 @@ static int ConvertSequenceUnknown(r5::unkseqdata_t* pOldUnknown, int numUnknown)
 //
 static int ConvertAnimation(char* pOldAnimIndex, r5::v8::mstudioanimdesc_t* pNewAnimDesc, int numBones)
 {
-	printf("converting animation...\n");
+	StudioLogf("converting animation...\n");
 
 	int index = g_model.pData - (char*)pNewAnimDesc;
 
@@ -5314,7 +5317,7 @@ static int ConvertAnimationSections(char* pOldSeqExtBuf, r5::v121::mstudioanimde
 //
 static int ConvertAnimationIkRules(r5::v8::mstudioikrule_t* pOldIkRules, r5::v8::mstudioanimdesc_t* pNewAnimDesc)
 {
-	printf("converting %i ikrules...\n", pNewAnimDesc->numikrules);
+	StudioLogf("converting %i ikrules...\n", pNewAnimDesc->numikrules);
 
 	int index = g_model.pData - (char*)pNewAnimDesc;
 
@@ -5369,7 +5372,7 @@ static int ConvertAnimationIkRules(r5::v8::mstudioikrule_t* pOldIkRules, r5::v8:
 //
 static int ConvertAnimationFrameMovement(r5::v8::mstudioframemovement_t* pOldFrameMovement, r5::v8::mstudioanimdesc_t* pNewAnimDesc)
 {
-	printf("converting framemovement...\n");
+	StudioLogf("converting framemovement...\n");
 
 	int index = g_model.pData - (char*)pNewAnimDesc;
 
@@ -5428,7 +5431,7 @@ static void ConvertSequenceAnims(char* pOldSeq, char* pOldSeqExtBuf, char* pNewS
 
 	std::vector<int*> animIndexes;
 
-	printf("converting %i animations...\n", numAnims);
+	StudioLogf("converting %i animations...\n", numAnims);
 
 	for (int currentAnimIdx = 0; currentAnimIdx < numAnims; currentAnimIdx++)
 	{

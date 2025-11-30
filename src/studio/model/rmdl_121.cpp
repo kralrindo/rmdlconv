@@ -3,25 +3,55 @@
 
 #include <pch.h>
 #include <studio/studio.h>
-#include <studio/versions.h>
 #include <studio/common.h>
+#include <studio/versions.h>
 
+#define printf StudioLogf
 
-/*
-	Type:    RMDL
-	Version: 12.1
-	Game:    Apex Legends Season 7
-
-	Files: .rmdl, .vg
-*/
-
-void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::string& pathOut)
+template<typename StudioHdrT, typename StudioBoneT, typename StudioModelT, typename StudioMeshT, typename StudioAnimDescT>
+struct RmdlVersionTraits
 {
-	//std::filesystem::path /*path*/(outPath);
+	using StudioHdr = StudioHdrT;
+	using StudioBone = StudioBoneT;
+	using StudioModel = StudioModelT;
+	using StudioMesh = StudioMeshT;
+	using StudioAnimDesc = StudioAnimDescT;
+};
 
-	// this needs to be changed to put the file in the right output dir
-	//std::string pathOut = outPath;
+using RmdlTraits121 = RmdlVersionTraits<
+	r5::v121::studiohdr_t,
+	r5::v121::mstudiobone_t,
+	r5::v121::mstudiomodel_t,
+	r5::v121::mstudiomesh_t,
+	r5::v121::mstudioanimdesc_t>;
 
+// Season 12.2 introduces a new header but reuses the 12.1 sub-structures.
+using RmdlTraits122 = RmdlVersionTraits<
+	r5::v122::studiohdr_t,
+	r5::v121::mstudiobone_t,
+	r5::v121::mstudiomodel_t,
+	r5::v121::mstudiomesh_t,
+	r5::v121::mstudioanimdesc_t>;
+
+// Season 13 introduced its own studio header layout but still reuses prior sub-structures.
+using RmdlTraits130 = RmdlVersionTraits<
+	r5::v130::studiohdr_t,
+	r5::v121::mstudiobone_t,
+	r5::v121::mstudiomodel_t,
+	r5::v121::mstudiomesh_t,
+	r5::v121::mstudioanimdesc_t>;
+
+using RmdlTraits140 = RmdlVersionTraits<
+	r5::v140::studiohdr_t,
+	r5::v121::mstudiobone_t,
+	r5::v121::mstudiomodel_t,
+	r5::v121::mstudiomesh_t,
+	r5::v121::mstudioanimdesc_t>;
+
+template<typename MeshHeaderT, typename StudioHdrT>
+static void ConvertVGData_Internal(char* buf, const std::string& filePath, const std::string& pathOut)
+{
+	StudioLogDomainScope logDomainScope(StudioLogDomain::VG);
 	rmem input(buf);
 
 	vg::rev2::VertexGroupHeader_t vghInput = input.read<vg::rev2::VertexGroupHeader_t>();
@@ -34,7 +64,6 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 	size_t lodBufSize = vghInput.lodCount * sizeof(vg::rev1::ModelLODHeader_t);
 	short lodSubmeshCount = 0;
 
-	//char* lodBuf = new char[lodBufSize];
 	std::unique_ptr<char[]> lodBuf(new char[lodBufSize]);
 	rmem lods(lodBuf.get());
 
@@ -44,21 +73,19 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 		input.seek(thisLodOffset, rseekdir::beg);
 		vg::rev2::ModelLODHeader_t lodInput = input.read<vg::rev2::ModelLODHeader_t>();
 
-		vg::rev1::ModelLODHeader_t lod{ lodSubmeshCount, (short)lodInput.meshCount, lodInput.switchPoint};
-
+		vg::rev1::ModelLODHeader_t lod{ lodSubmeshCount, (short)lodInput.meshCount, lodInput.switchPoint };
 		lods.write(lod);
 
 		for (int j = 0; j < lodInput.meshCount; ++j)
 		{
-			size_t thisSubmeshOffset = thisLodOffset + offsetof(vg::rev2::ModelLODHeader_t, meshOffset) + lodInput.meshOffset + (j * sizeof(vg::rev2::MeshHeader_t));
+			size_t thisSubmeshOffset = thisLodOffset + offsetof(vg::rev2::ModelLODHeader_t, meshOffset) + lodInput.meshOffset + (j * sizeof(MeshHeaderT));
 			input.seek(thisSubmeshOffset, rseekdir::beg);
-
-			vg::rev2::MeshHeader_t submesh = input.read<vg::rev2::MeshHeader_t>();
-			vertexBufSize += submesh.vertBufferSize;
-			indexBufSize += submesh.indexCount * 2;
-			extendedWeightsBufSize += submesh.externalWeightSize;
-			externalWeightsBufSize += submesh.legacyWeightCount * 0x10;
-			stripsBufSize += submesh.stripCount * sizeof(OptimizedModel::StripHeader_t);
+			MeshHeaderT submesh = input.read<MeshHeaderT>();
+			vertexBufSize += static_cast<size_t>(submesh.vertBufferSize);
+			indexBufSize += static_cast<size_t>(submesh.indexCount) * 2;
+			extendedWeightsBufSize += static_cast<size_t>(submesh.externalWeightSize);
+			externalWeightsBufSize += static_cast<size_t>(submesh.legacyWeightCount) * sizeof(vvd::mstudioboneweight_t);
+			stripsBufSize += static_cast<size_t>(submesh.stripCount) * sizeof(OptimizedModel::StripHeader_t);
 		}
 
 		lodSubmeshCount += lodInput.meshCount;
@@ -71,15 +98,12 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 	std::unique_ptr<char[]> stripsBuf = std::make_unique<char[]>(stripsBufSize);
 	std::unique_ptr<char[]> meshBuf = std::make_unique<char[]>(lodSubmeshCount * sizeof(vg::rev1::MeshHeader_t));
 
-	printf("VG: allocatedbuffers:\n");
-	printf(
-		"vertex: %lld\nindex: %lld\nextendedWeights: %lld\nexternalWeights: %lld\n",
-		vertexBufSize,
-		indexBufSize,
-		extendedWeightsBufSize,
-		externalWeightsBufSize);
+	printf("allocatedbuffers:\n");
+	printf("vertex: %lld\n", vertexBufSize);
+	printf("index: %lld\n", indexBufSize);
+	printf("extendedWeights: %lld\n", extendedWeightsBufSize);
+	printf("externalWeights: %lld\n", externalWeightsBufSize);
 
-	// reuse vars for size added
 	vertexBufSize = 0;
 	indexBufSize = 0;
 	extendedWeightsBufSize = 0;
@@ -88,7 +112,6 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 
 	rmem submeshes(meshBuf.get());
 
-	// populate buffers fr
 	for (int i = 0; i < vghInput.lodCount; ++i)
 	{
 		size_t thisLodOffset = 0x18 + (i * sizeof(vg::rev2::ModelLODHeader_t)) + vghInput.lodOffset;
@@ -97,15 +120,13 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 
 		for (int j = 0; j < lodInput.meshCount; ++j)
 		{
-			size_t thisSubmeshOffset = thisLodOffset + offsetof(vg::rev2::ModelLODHeader_t, meshOffset) + lodInput.meshOffset + (j * sizeof(vg::rev2::MeshHeader_t));
+			size_t thisSubmeshOffset = thisLodOffset + offsetof(vg::rev2::ModelLODHeader_t, meshOffset) + lodInput.meshOffset + (j * sizeof(MeshHeaderT));
 			input.seek(thisSubmeshOffset, rseekdir::beg);
 
 			char* thisSubmeshPointer = reinterpret_cast<char*>(input.getPtr());
-
-			vg::rev2::MeshHeader_t submeshInput = input.read<vg::rev2::MeshHeader_t>();
+			MeshHeaderT submeshInput = input.read<MeshHeaderT>();
 
 			vg::rev1::MeshHeader_t submesh{};
-
 			submesh.flags = submeshInput.flags;
 			submesh.vertCacheSize = static_cast<uint32_t>(submeshInput.vertCacheSize);
 			submesh.vertCount = static_cast<uint32_t>(submeshInput.vertCount);
@@ -113,72 +134,61 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 			submesh.extraBoneWeightSize = static_cast<uint32_t>(submeshInput.externalWeightSize);
 			submesh.legacyWeightCount = static_cast<uint32_t>(submeshInput.legacyWeightCount);
 			submesh.stripCount = static_cast<uint32_t>(submeshInput.stripCount);
-
 			submesh.vertOffset = static_cast<uint32_t>(vertexBufSize);
 			submesh.indexOffset = static_cast<uint32_t>(indexBufSize) / sizeof(uint16_t);
 			submesh.extraBoneWeightOffset = static_cast<uint32_t>(extendedWeightsBufSize);
 			submesh.legacyWeightOffset = static_cast<uint32_t>(externalWeightsBufSize) / sizeof(vvd::mstudioboneweight_t);
 			submesh.stripOffset = static_cast<uint32_t>(stripsBufSize) / sizeof(OptimizedModel::StripHeader_t);
-
 			submeshes.write(submesh);
-			
-			void* vtxPtr = (thisSubmeshPointer + offsetof(vg::rev2::MeshHeader_t, vertOffset) + submeshInput.vertOffset);
+
+			void* vtxPtr = thisSubmeshPointer + offsetof(MeshHeaderT, vertOffset) + submeshInput.vertOffset;
 			std::memcpy(vertexBuf.get() + vertexBufSize, vtxPtr, submeshInput.vertBufferSize);
 			vertexBufSize += submeshInput.vertBufferSize;
 
-			void* indexPtr = (thisSubmeshPointer + offsetof(vg::rev2::MeshHeader_t, indexOffset) + submeshInput.indexOffset);
+			void* indexPtr = thisSubmeshPointer + offsetof(MeshHeaderT, indexOffset) + submeshInput.indexOffset;
 			std::memcpy(indexBuf.get() + indexBufSize, indexPtr, submeshInput.indexCount * 2);
 			indexBufSize += submeshInput.indexCount * 2;
 
-			void* extendedWeightsPtr = (thisSubmeshPointer + offsetof(vg::rev2::MeshHeader_t, externalWeightOffset) + submeshInput.externalWeightOffset);
+			void* extendedWeightsPtr = thisSubmeshPointer + offsetof(MeshHeaderT, externalWeightOffset) + submeshInput.externalWeightOffset;
 			std::memcpy(extendedWeightsBuf.get() + extendedWeightsBufSize, extendedWeightsPtr, submeshInput.externalWeightSize);
 			extendedWeightsBufSize += submeshInput.externalWeightSize;
 
-			void* externalWeightsPtr = (thisSubmeshPointer + offsetof(vg::rev2::MeshHeader_t, legacyWeightOffset) + submeshInput.legacyWeightOffset);
+			void* externalWeightsPtr = thisSubmeshPointer + offsetof(MeshHeaderT, legacyWeightOffset) + submeshInput.legacyWeightOffset;
 			std::memcpy(externalWeightsBuf.get() + externalWeightsBufSize, externalWeightsPtr, submeshInput.legacyWeightCount * sizeof(vvd::mstudioboneweight_t));
 			externalWeightsBufSize += submeshInput.legacyWeightCount * sizeof(vvd::mstudioboneweight_t);
 
-			void* stripsPtr = (thisSubmeshPointer + offsetof(vg::rev2::MeshHeader_t, stripOffset) + submeshInput.stripOffset);
+			void* stripsPtr = thisSubmeshPointer + offsetof(MeshHeaderT, stripOffset) + submeshInput.stripOffset;
 			std::memcpy(stripsBuf.get() + stripsBufSize, stripsPtr, submeshInput.stripCount * sizeof(OptimizedModel::StripHeader_t));
 			stripsBufSize += submeshInput.stripCount * sizeof(OptimizedModel::StripHeader_t);
 		}
 	}
 
 	std::string rmdlPath = ChangeExtension(filePath, "rmdl");
-
 	char* boneRemapBuf = nullptr;
 	unsigned int boneRemapCount = 0;
-
 	char* unkDataBuf = nullptr;
 
-	if (std::filesystem::exists(rmdlPath) && GetFileSize(rmdlPath) > sizeof(r5::v121::studiohdr_t))
+	if (std::filesystem::exists(rmdlPath) && GetFileSize(rmdlPath) > sizeof(StudioHdrT))
 	{
-		// grab bone remaps from rmdl
 		std::ifstream ifs(rmdlPath, std::ios::in | std::ios::binary);
-
-		r5::v121::studiohdr_t hdr;
-
+		StudioHdrT hdr;
 		ifs.read((char*)&hdr, sizeof(hdr));
 
 		if (hdr.boneStateCount > 0)
 		{
-			ifs.seekg(offsetof(r5::v121::studiohdr_t, boneStateOffset) + hdr.boneStateOffset, std::ios::beg);
-
+			ifs.seekg(offsetof(StudioHdrT, boneStateOffset) + hdr.boneStateOffset, std::ios::beg);
 			boneRemapCount = hdr.boneStateCount;
-
 			boneRemapBuf = new char[boneRemapCount];
 			ifs.read(boneRemapBuf, boneRemapCount);
 		}
 
 		if (hdr.vgMeshCount > 0)
 		{
-			ifs.seekg(offsetof(r5::v121::studiohdr_t, vgMeshOffset) + hdr.vgMeshOffset, std::ios::beg);
-
+			ifs.seekg(offsetof(StudioHdrT, vgMeshOffset) + hdr.vgMeshOffset, std::ios::beg);
 			unkDataBuf = new char[hdr.vgMeshCount * 0x30];
 			ifs.read(unkDataBuf, hdr.vgMeshCount * 0x30);
 		}
 
-		// close rmdl stream once we are done with it
 		ifs.close();
 	}
 
@@ -192,17 +202,15 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 	vgh.extraBoneWeightSize = extendedWeightsBufSize;
 	vgh.lodCount = vghInput.lodCount;
 	vgh.unknownCount = vgh.meshCount / vgh.lodCount;
-	vgh.legacyWeightOffset = externalWeightsBufSize / sizeof(vvd::mstudioboneweight_t);
+	vgh.legacyWeightCount = externalWeightsBufSize / sizeof(vvd::mstudioboneweight_t);
 	vgh.stripCount = stripsBufSize / sizeof(OptimizedModel::StripHeader_t);
 
 	BinaryIO out;
-
 	out.open(pathOut, BinaryIOMode::Write);
-
 	out.write(vgh);
 
 	vgh.boneStateChangeOffset = out.tell();
-	if(boneRemapCount)
+	if (boneRemapCount)
 		out.getWriter()->write(boneRemapBuf, boneRemapCount);
 
 	vgh.meshOffset = out.tell();
@@ -217,8 +225,7 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 	vgh.extraBoneWeightOffset = out.tell();
 	out.getWriter()->write(extendedWeightsBuf.get(), extendedWeightsBufSize);
 
-	// if this data hasn't been retrieved from .rmdl, write it as null bytes
-	if(!unkDataBuf)
+	if (!unkDataBuf)
 		unkDataBuf = new char[vgh.unknownCount * 0x30]{};
 
 	vgh.unknownOffset = out.tell();
@@ -234,11 +241,8 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 	out.getWriter()->write(stripsBuf.get(), stripsBufSize);
 
 	vgh.dataSize = (unsigned int)out.tell();
-
 	out.seek(0, std::ios::beg);
-
 	out.write(vgh);
-
 	out.close();
 
 	printf("done! freeing buffers\n");
@@ -249,9 +253,54 @@ void ConvertVGData_12_1(char* buf, const std::string& filePath, const std::strin
 	delete[] unkDataBuf;
 }
 
+template<typename StudioHdrT>
+static void ConvertVGData_Rev2(char* inputBuf, const std::string& filePath, const std::string& pathOut)
+{
+	ConvertVGData_Internal<vg::rev2::MeshHeader_t, StudioHdrT>(inputBuf, filePath, pathOut);
+}
+
+void ConvertVGData_12_1(char* inputBuf, const std::string& filePath, const std::string& pathOut)
+{
+	ConvertVGData_Rev2<r5::v121::studiohdr_t>(inputBuf, filePath, pathOut);
+}
+
+void ConvertVGData_14(char* inputBuf, const std::string& filePath, const std::string& pathOut)
+{
+	ConvertVGData_Internal<vg::rev3::MeshHeader_t, r5::v140::studiohdr_t>(inputBuf, filePath, pathOut);
+}
+
+static MaterialShaderType_t GuessMaterialTypeFromName(const char* textureName)
+{
+	if (!textureName)
+		return MaterialShaderType_t::RGDP;
+
+	std::string name(textureName);
+	if (name.length() < 4)
+		return MaterialShaderType_t::RGDP;
+
+	std::string suffix = name.substr(name.length() - 4);
+	std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char ch) {
+		return static_cast<char>(::tolower(ch));
+	});
+
+	if (suffix == "rgdu") return MaterialShaderType_t::RGDU;
+	if (suffix == "rgdp") return MaterialShaderType_t::RGDP;
+	if (suffix == "rgdc") return MaterialShaderType_t::RGDC;
+	if (suffix == "sknu") return MaterialShaderType_t::SKNU;
+	if (suffix == "sknp") return MaterialShaderType_t::SKNP;
+	if (suffix == "sknc") return MaterialShaderType_t::SKNC;
+	if (suffix == "wldu") return MaterialShaderType_t::WLDU;
+	if (suffix == "wldc") return MaterialShaderType_t::WLDC;
+	if (suffix == "ptcu") return MaterialShaderType_t::PTCU;
+	if (suffix == "ptcs") return MaterialShaderType_t::PTCS;
+
+	return MaterialShaderType_t::RGDP;
+}
+
 //
 // ConvertStudioHdr
-void ConvertStudioHdr(r5::v8::studiohdr_t* out, r5::v121::studiohdr_t* hdr)
+template<typename StudioHdrT>
+void ConvertStudioHdr(r5::v8::studiohdr_t* out, StudioHdrT* hdr)
 {
 	out->id = 'TSDI';
 	out->version = 54;
@@ -342,7 +391,8 @@ void ConvertStudioHdr(r5::v8::studiohdr_t* out, r5::v121::studiohdr_t* hdr)
 	//-| end for giggles
 }
 
-void GenerateRigHdr(r5::v8::studiohdr_t* out, r5::v121::studiohdr_t* hdr)
+template<typename StudioHdrT>
+void GenerateRigHdr(r5::v8::studiohdr_t* out, StudioHdrT* hdr)
 {
 	out->id = 'TSDI';
 	out->version = 54;
@@ -367,15 +417,17 @@ void GenerateRigHdr(r5::v8::studiohdr_t* out, r5::v121::studiohdr_t* hdr)
 	out->defaultFadeDist = hdr->defaultFadeDist;
 }
 
-void ConvertBones_121(r5::v121::mstudiobone_t* pOldBones, int numBones, bool isRig)
+template<typename Traits>
+void ConvertBones_12x(typename Traits::StudioBone* pOldBones, int numBones, bool isRig)
 {
 	printf("converting %i bones...\n", numBones);
 	std::vector<r5::v8::mstudiobone_t*> proceduralBones;
+	using OldBone = typename Traits::StudioBone;
 
 	char* pBoneStart = g_model.pData;
 	for (int i = 0; i < numBones; ++i)
 	{
-		r5::v121::mstudiobone_t* oldBone = &pOldBones[i];
+		OldBone* oldBone = &pOldBones[i];
 
 		r5::v8::mstudiobone_t* newBone = reinterpret_cast<r5::v8::mstudiobone_t*>(g_model.pData) + i;
 
@@ -421,7 +473,7 @@ void ConvertBones_121(r5::v121::mstudiobone_t* pOldBones, int numBones, bool isR
 	for (auto bone : proceduralBones)
 	{
 		int boneid = ((char*)bone - pBoneStart) / sizeof(r5::v8::mstudiobone_t);
-		r5::v121::mstudiobone_t* oldBone = &pOldBones[boneid];
+		OldBone* oldBone = &pOldBones[boneid];
 		void* oldJBone = PTR_FROM_IDX(void*, oldBone, oldBone->procindex);
 
 		r5::v8::mstudiojigglebone_t* jBone = reinterpret_cast<r5::v8::mstudiojigglebone_t*>(g_model.pData);
@@ -504,7 +556,8 @@ void ConvertHitboxes_121(mstudiohitboxset_t* pOldHitboxSets, int numHitboxSets)
 	ALIGN4(g_model.pData);
 }
 
-void ConvertBodyParts_121(mstudiobodyparts_t* pOldBodyParts, int numBodyParts)
+template<typename Traits>
+void ConvertBodyParts_12x(mstudiobodyparts_t* pOldBodyParts, int numBodyParts)
 {
 	printf("converting %i bodyparts...\n", numBodyParts);
 
@@ -518,7 +571,6 @@ void ConvertBodyParts_121(mstudiobodyparts_t* pOldBodyParts, int numBodyParts)
 
 		memcpy(g_model.pData, oldbodypart, sizeof(mstudiobodyparts_t));
 
-		printf("%s\n", STRING_FROM_IDX(oldbodypart, oldbodypart->sznameindex));
 		AddToStringTable((char*)newbodypart, &newbodypart->sznameindex, STRING_FROM_IDX(oldbodypart, oldbodypart->sznameindex));
 
 		g_model.pData += sizeof(mstudiobodyparts_t);
@@ -532,13 +584,14 @@ void ConvertBodyParts_121(mstudiobodyparts_t* pOldBodyParts, int numBodyParts)
 		newbodypart->modelindex = g_model.pData - (char*)newbodypart;
 
 		// pointer to old models (in .mdl)
-		r5::v121::mstudiomodel_t* oldModels = reinterpret_cast<r5::v121::mstudiomodel_t*>((char*)oldbodypart + oldbodypart->modelindex);
+		using OldModel = typename Traits::StudioModel;
+		OldModel* oldModels = reinterpret_cast<OldModel*>((char*)oldbodypart + oldbodypart->modelindex);
 
 		// pointer to start of new model data (in .rmdl)
 		r5::v8::mstudiomodel_t* newModels = reinterpret_cast<r5::v8::mstudiomodel_t*>(g_model.pData);
 		for (int j = 0; j < newbodypart->nummodels; ++j)
 		{
-			r5::v121::mstudiomodel_t* oldModel = oldModels + j;
+			OldModel* oldModel = oldModels + j;
 			r5::v8::mstudiomodel_t* newModel = reinterpret_cast<r5::v8::mstudiomodel_t*>(g_model.pData);
 
 			memcpy(&newModel->name, &oldModel->name, sizeof(newModel->name));
@@ -560,20 +613,21 @@ void ConvertBodyParts_121(mstudiobodyparts_t* pOldBodyParts, int numBodyParts)
 
 		for (int j = 0; j < newbodypart->nummodels; ++j)
 		{
-			r5::v121::mstudiomodel_t* oldModel = oldModels + j;
+			OldModel* oldModel = oldModels + j;
 			r5::v8::mstudiomodel_t* newModel = newModels + j;
 
 			newModel->meshindex = g_model.pData - (char*)newModel;
 
 			// pointer to old meshes for this model (in .mdl)
-			r5::v121::mstudiomesh_t* oldMeshes = reinterpret_cast<r5::v121::mstudiomesh_t*>((char*)oldModel + oldModel->meshindex);
+			using OldMesh = typename Traits::StudioMesh;
+			OldMesh* oldMeshes = reinterpret_cast<OldMesh*>((char*)oldModel + oldModel->meshindex);
 
 			// pointer to new meshes for this model (in .rmdl)
 			r5::v8::mstudiomesh_t* newMeshes = reinterpret_cast<r5::v8::mstudiomesh_t*>(g_model.pData);
 
 			for (int k = 0; k < newModel->nummeshes; ++k)
 			{
-				r5::v121::mstudiomesh_t* oldMesh = oldMeshes + k;
+				OldMesh* oldMesh = oldMeshes + k;
 				r5::v8::mstudiomesh_t* newMesh = newMeshes + k;
 
 				newMesh->material = oldMesh->material;
@@ -643,7 +697,8 @@ void ConvertIkChains_121(r5::v8::mstudioikchain_t* pOldIkChains, int numIkChains
 	ALIGN4(g_model.pData);
 }
 
-static void ConvertUIPanelMeshes(const r5::v121::studiohdr_t* const oldHeader, rmem& input)
+template<typename StudioHdrT>
+static void ConvertUIPanelMeshes(const StudioHdrT* const oldHeader, rmem& input)
 {
 	if (oldHeader->uiPanelCount == 0)
 		return;
@@ -722,6 +777,10 @@ void ConvertTextures_121(mstudiotexturedir_t* pCDTextures, int numCDTextures, r5
 	// TODO[rexx]: maybe add old cdtexture parsing here if available, or give the user the option to manually set the material paths
 	printf("converting %i textures...\n", numTextures);
 
+	std::vector<MaterialShaderType_t> inferredShaderTypes;
+	if (!shaderTypes)
+		inferredShaderTypes.reserve(numTextures);
+
 	g_model.hdrV54()->textureindex = g_model.pData - g_model.pBase;
 	for (int i = 0; i < numTextures; ++i)
 	{
@@ -733,6 +792,9 @@ void ConvertTextures_121(mstudiotexturedir_t* pCDTextures, int numCDTextures, r5
 		AddToStringTable((char*)newTexture, &newTexture->sznameindex, textureName);
 
 		newTexture->textureGuid = oldTexture->textureGuid;
+
+		if (!shaderTypes)
+			inferredShaderTypes.push_back(GuessMaterialTypeFromName(textureName));
 
 		g_model.pData += sizeof(r5::v8::mstudiotexture_t);
 	}
@@ -751,13 +813,12 @@ void ConvertTextures_121(mstudiotexturedir_t* pCDTextures, int numCDTextures, r5
 	}
 	else
 	{
-		// TEMP, COMMENT OUT FOR NON V13
-		// V13 seems to have these removed while its using RGDP materials.
-		// needs further research to decide how to convert these.
+		// Later RMDL versions omit material type metadata, so try deriving it
+		// from the texture naming convention (suffix matches shader type).
 		g_model.hdrV54()->materialtypesindex = g_model.pData - g_model.pBase;
 
-		memset(g_model.pData, RGDP, numTextures);
-		g_model.pData += numTextures;
+		for (const MaterialShaderType_t type : inferredShaderTypes)
+			*g_model.pData++ = static_cast<char>(type);
 	}
 
 	ALIGN4(g_model.pData); // align data to 4 bytes
@@ -902,20 +963,30 @@ static int CopyAttachmentsData(r5::v8::mstudioattachment_t* pOldAttachments, int
 #define FILEBUFSIZE (32 * 1024 * 1024)
 
 //
-// ConvertRMDL121To10
-// Purpose: converts mdl data from rmdl v53 subversion 12.1 (Season 8) to rmdl v9 (Apex Legends Season 2/3)
+// ConvertRMDL12xTo10Impl
+// Purpose: converts mdl data from various rmdl v53 subversions to rmdl v9 (Apex Legends Season 2/3)
 //
-void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string& pathOut)
+template<typename Traits>
+static void ConvertRMDL12xTo10Impl(char* pMDL, const std::string& pathIn, const std::string& pathOut, eRMdlSubVersion subVersion)
 {
 	std::string rawModelName = std::filesystem::path(pathIn).filename().u8string();
 
-	printf("Converting model '%s' from version 54 (subversion 12.1) to version 54 (subversion 10)...\n", rawModelName.c_str());
+	printf(
+		"Converting model '%s' from version 54 (subversion %s) to version 54 (subversion 10)...\n",
+		rawModelName.c_str(),
+		DescribeSubVersion(subVersion));
 
-	TIME_SCOPE(__FUNCTION__);
+	const std::string timerLabel = std::string("ConvertRMDL") + DescribeSubVersion(subVersion) + "To10";
+	TIME_SCOPE(timerLabel.c_str());
+	g_logDomain = StudioLogDomain::MDL;
 
 	rmem input(pMDL);
 
-	r5::v121::studiohdr_t* oldHeader = input.get<r5::v121::studiohdr_t>();
+	using StudioHdr = typename Traits::StudioHdr;
+	using StudioBone = typename Traits::StudioBone;
+	using StudioAnimDesc = typename Traits::StudioAnimDesc;
+
+	StudioHdr* oldHeader = input.get<StudioHdr>();
 
 	std::string rmdlPath = ChangeExtension(pathOut, "rmdl_conv");
 	std::ofstream out(rmdlPath, std::ios::out | std::ios::binary);
@@ -964,7 +1035,7 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 
 	// convert bones and jigglebones
 	input.seek(oldHeader->boneindex, rseekdir::beg);
-	ConvertBones_121((r5::v121::mstudiobone_t*)input.getPtr(), oldHeader->numbones, false);
+	ConvertBones_12x<Traits>(reinterpret_cast<StudioBone*>(input.getPtr()), oldHeader->numbones, false);
 
 	// convert attachments
 	input.seek(oldHeader->localattachmentindex, rseekdir::beg);
@@ -984,11 +1055,11 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 	ALIGN4(g_model.pData);
 
 	input.seek(oldHeader->localseqindex, rseekdir::beg);
-	ConvertAnims_121<r5::v121::mstudioanimdesc_t>((const char*)input.getPtr(), oldHeader->numlocalseq);
+	ConvertAnims_121<StudioAnimDesc>((const char*)input.getPtr(), oldHeader->numlocalseq);
 
 	// convert bodyparts, models, and meshes
 	input.seek(oldHeader->bodypartindex, rseekdir::beg);
-	ConvertBodyParts_121((mstudiobodyparts_t*)input.getPtr(), oldHeader->numbodyparts);
+	ConvertBodyParts_12x<Traits>((mstudiobodyparts_t*)input.getPtr(), oldHeader->numbodyparts);
 
 	input.seek(oldHeader->localposeparamindex, rseekdir::beg);
 	g_model.hdrV54()->localposeparamindex = ConvertPoseParams((mstudioposeparamdesc_t*)input.getPtr(), oldHeader->numlocalposeparameters, false);
@@ -1056,7 +1127,8 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 		g_model.hdrV54()->bvhOffset = g_model.pData - g_model.pBase;
 
 		input.seek(oldHeader->bvhOffset, rseekdir::beg);
-		ConvertCollisionData_V120(oldHeader, (char*)input.getPtr());
+		auto* compatHeader = reinterpret_cast<r5::v121::studiohdr_t*>(oldHeader);
+		ConvertCollisionData_V120(compatHeader, (char*)input.getPtr());
 	}
 
 	pHdr->length = g_model.pData - g_model.pBase;
@@ -1071,6 +1143,7 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 
 	if (FILE_EXISTS(vgFilePath))
 	{
+		g_logDomain = StudioLogDomain::VG;
 		uintmax_t vgInputSize = GetFileSize(vgFilePath);
 
 		char* vgInputBuf = new char[vgInputSize];
@@ -1081,11 +1154,18 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 
 		// if 0tVG magic
 		if (*(int*)vgInputBuf == 'GVt0')
-			ConvertVGData_12_1(vgInputBuf, vgFilePath, ChangeExtension(pathOut, "vg_conv"));
+		{
+			const std::string vgOutPath = ChangeExtension(pathOut, "vg_conv");
+			if (subVersion == eRMdlSubVersion::VERSION_14)
+				ConvertVGData_14(vgInputBuf, vgFilePath, vgOutPath);
+			else
+				ConvertVGData_Rev2<StudioHdr>(vgInputBuf, vgFilePath, vgOutPath);
+		}
 
 		delete[] vgInputBuf;
 	}
 
+	g_logDomain = StudioLogDomain::MDL;
 	// now delete rmdl buffer so we can write the rig
 	delete[] g_model.pBase;
 
@@ -1103,6 +1183,7 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 		rigName += ".rrig";
 	}
 
+	g_isRigPhase = true;
 	printf("Creating rig from model...\n");
 
 	std::string rrigPath = ChangeExtension(pathOut, "rrig");
@@ -1127,18 +1208,21 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 
 	// convert bones and jigglebones
 	input.seek(oldHeader->boneindex, rseekdir::beg);
-	ConvertBones_121((r5::v121::mstudiobone_t*)input.getPtr(), oldHeader->numbones, true);
+	ConvertBones_12x<Traits>(reinterpret_cast<StudioBone*>(input.getPtr()), oldHeader->numbones, false);
 
 	// convert attachments
-	input.seek(oldHeader->localattachmentindex, rseekdir::beg);
-	g_model.hdrV54()->localattachmentindex = CopyAttachmentsData((r5::v8::mstudioattachment_t*)input.getPtr(), oldHeader->numlocalattachments);
+	input.seek(oldHeader->bodypartindex, rseekdir::beg);
+	ConvertBodyParts_12x<Traits>((mstudiobodyparts_t*)input.getPtr(), oldHeader->numbodyparts);
 
-	// convert hitboxsets and hitboxes
+	// convert sequences and hitbox data
+	input.seek(oldHeader->localseqindex, rseekdir::beg);
+	ConvertAnims_121<StudioAnimDesc>((const char*)input.getPtr(), oldHeader->numlocalseq);
+
 	input.seek(oldHeader->hitboxsetindex, rseekdir::beg);
 	ConvertHitboxes_121((mstudiohitboxset_t*)input.getPtr(), oldHeader->numhitboxsets);
 
-	// copy bonebyname table (bone ids sorted alphabetically by name)
-	input.seek(oldHeader->bonetablebynameindex, rseekdir::beg);
+	input.seek(oldHeader->boneindex, rseekdir::beg);
+	ConvertBones_12x<Traits>(reinterpret_cast<StudioBone*>(input.getPtr()), oldHeader->numbones, true);
 	input.read(g_model.pData, g_model.hdrV54()->numbones);
 
 	g_model.hdrV54()->bonetablebynameindex = g_model.pData - g_model.pBase;
@@ -1165,6 +1249,28 @@ void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string
 
 	g_model.stringTable.clear(); // cleanup string table
 
+	g_isRigPhase = false;
 	printf("Finished converting model '%s', proceeding...\n\n", rawModelName.c_str());
 }
+
+void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string& pathOut, eRMdlSubVersion subVersion)
+{
+	switch (subVersion)
+	{
+	case eRMdlSubVersion::VERSION_12_2:
+		ConvertRMDL12xTo10Impl<RmdlTraits122>(pMDL, pathIn, pathOut, subVersion);
+		break;
+	case eRMdlSubVersion::VERSION_13:
+		ConvertRMDL12xTo10Impl<RmdlTraits130>(pMDL, pathIn, pathOut, subVersion);
+		break;
+	case eRMdlSubVersion::VERSION_14:
+		ConvertRMDL12xTo10Impl<RmdlTraits140>(pMDL, pathIn, pathOut, subVersion);
+		break;
+	default:
+		ConvertRMDL12xTo10Impl<RmdlTraits121>(pMDL, pathIn, pathOut, subVersion);
+		break;
+	}
+}
+
+#undef printf
 

@@ -2,24 +2,20 @@
 // See LICENSE.txt for licensing information (GPL v3)
 
 #include <pch.h>
+#include <algorithm>
+#include <cctype>
 #include <core/CommandLine.h>
 #include <studio/versions.h>
 #include <core/utils.h>
 
 const char* pszVersionHelpString = {
-	"Please input the version of your model:\n"
-	"-- OLD --\n"
-	"8:    s0,1\n"
-	"9:    s2\n"
-	"10:   s3,4\n"
-	"11:   s5\n"
-	"12:   s6\n"
-	"-- NEW --\n"
-	"12.1: s7,8\n"
-	"12.2: s9,10,11\n"
-	"13:   s12\n"
-	"14:   s13.1\n"
-	"14.1: s14\n"
+	"Please pick the source RMDL version range:\n"
+	" 1:  rmdl v8\n"
+	" 2:  rmdl v12\n"
+	" 3:  rmdl v12.1\n"
+	" 4:  rmdl v12.2 - v12.5\n"
+	" 5:  rmdl v13 - v13.1\n"
+	" 6:  rmdl v14 - v14.1\n"
 	"> "
 };
 
@@ -31,6 +27,55 @@ const char* pszRSeqVersionHelpString = {
 	"11:   s15\n"
 	"> "
 };
+
+static eRMdlSubVersion ParseApexSubVersion(std::string version)
+{
+	version.erase(std::remove_if(version.begin(), version.end(), ::isspace), version.end());
+	std::transform(version.begin(), version.end(), version.begin(), [](unsigned char ch) { return static_cast<char>(::tolower(ch)); });
+
+	bool strippedPrefix = false;
+	if (version.rfind("rmdl", 0) == 0)
+	{
+		version.erase(0, 4);
+		strippedPrefix = true;
+	}
+	if (!version.empty() && version.front() == 'v')
+	{
+		version.erase(version.begin());
+		strippedPrefix = true;
+	}
+
+	if (version == "8")
+		return eRMdlSubVersion::VERSION_8;
+	if (version == "12" || version == "12.0")
+		return eRMdlSubVersion::VERSION_12;
+	if (version == "12.1" || version == "121")
+		return eRMdlSubVersion::VERSION_12_1;
+	if (version == "12.2" || version == "122")
+		return eRMdlSubVersion::VERSION_12_2;
+	if (version == "13" || version == "13.0")
+		return eRMdlSubVersion::VERSION_13;
+	if (version == "14" || version == "14.0" || version == "14.1" || version == "141")
+		return eRMdlSubVersion::VERSION_14;
+
+	if (!strippedPrefix)
+	{
+		if (version == "1")
+			return eRMdlSubVersion::VERSION_8;
+		if (version == "2")
+			return eRMdlSubVersion::VERSION_12;
+		if (version == "3")
+			return eRMdlSubVersion::VERSION_12_1;
+		if (version == "4")
+			return eRMdlSubVersion::VERSION_12_2;
+		if (version == "5")
+			return eRMdlSubVersion::VERSION_13;
+		if (version == "6")
+			return eRMdlSubVersion::VERSION_14;
+	}
+
+	return eRMdlSubVersion::VERSION_UNK;
+}
 
 // move on from this
 void LegacyConversionHandling(CommandLine& cmdline)
@@ -132,49 +177,53 @@ void LegacyConversionHandling(CommandLine& cmdline)
 				std::cin >> version;
 			}
 
-			printf("Input file is RMDL v%s. attempting conversion...\n", version.c_str());
-
-			if (version == "12.1") // handle 12.1 model conversions
+			auto loadModelFile = [&](std::unique_ptr<char[]>& buffer) -> uintmax_t
 			{
-				// convert v12.1 vg to v9 vg
-				std::string vgFilePath = ChangeExtension(mdlPath, "vg");
-
-				if (FILE_EXISTS(vgFilePath))
-				{
-					uintmax_t vgInputSize = GetFileSize(vgFilePath);
-
-					char* vgInputBuf = new char[vgInputSize];
-
-					std::ifstream ifs(vgFilePath, std::ios::in | std::ios::binary);
-
-					ifs.read(vgInputBuf, vgInputSize);
-
-					// if 0tVG magic
-					if (*(int*)vgInputBuf == 'GVt0')
-						ConvertVGData_12_1(vgInputBuf, vgFilePath, ChangeExtension(mdlPath, "vg_conv"));
-					else
-						delete[] vgInputBuf;
-				}
-			}
-			else if (version == "8")
-			{
-				intmax_t mdlFileSize = GetFileSize(mdlPath);
-
+				const uintmax_t mdlFileSize = GetFileSize(mdlPath);
 				mdlIn.seek(0, std::ios::beg);
+				buffer.reset(new char[mdlFileSize]);
+				mdlIn.getReader()->read(buffer.get(), mdlFileSize);
+				return mdlFileSize;
+			};
 
-				char* mdlBuf = new char[mdlFileSize];
+			const eRMdlSubVersion subVersion = ParseApexSubVersion(version);
+			if (subVersion == eRMdlSubVersion::VERSION_UNK)
+			{
+				Error("version '%s' is not currently supported\n", version.c_str());
+			}
 
-				mdlIn.getReader()->read(mdlBuf, mdlFileSize);
+			const char* const subVersionLabel = DescribeSubVersion(subVersion);
+			printf("Input file is RMDL v%s. attempting conversion...\n", subVersionLabel);
 
-				ConvertRMDL8To10(mdlBuf, mdlPath, mdlPath);
-
-				delete[] mdlBuf;
-
+			switch (subVersion)
+			{
+			case eRMdlSubVersion::VERSION_8:
+			{
+				std::unique_ptr<char[]> mdlBuf;
+				loadModelFile(mdlBuf);
+				ConvertRMDL8To10(mdlBuf.get(), mdlPath, mdlPath);
 				break;
 			}
-			else
+			case eRMdlSubVersion::VERSION_12:
 			{
-				Error("version is not currently supported\n");
+				std::unique_ptr<char[]> mdlBuf;
+				const uintmax_t mdlFileSize = loadModelFile(mdlBuf);
+				ConvertRMDL120To10(mdlBuf.get(), static_cast<size_t>(mdlFileSize), mdlPath, mdlPath);
+				break;
+			}
+			case eRMdlSubVersion::VERSION_12_1:
+			case eRMdlSubVersion::VERSION_12_2:
+			case eRMdlSubVersion::VERSION_13:
+			case eRMdlSubVersion::VERSION_14:
+			{
+				std::unique_ptr<char[]> mdlBuf;
+				loadModelFile(mdlBuf);
+				ConvertRMDL121To10(mdlBuf.get(), mdlPath, mdlPath, subVersion);
+				break;
+			}
+			default:
+				Error("version '%s' is not currently supported\n", version.c_str());
+				break;
 			}
 
 			break;
@@ -246,7 +295,7 @@ void LegacyConversionHandling(CommandLine& cmdline)
 int main(int argc, char** argv)
 {
 
-	printf("rmdlconv - Copyright (c) %s, rexx\n", &__DATE__[7]);
+	printf("rmdlconv - Copyright (c) %s, Authors: Rexx, Rikayam\n", &__DATE__[7]);
 
 	CommandLine cmdline(argc, argv);
 
@@ -266,7 +315,16 @@ int main(int argc, char** argv)
 		if (cmdline.HasParam("-outputdir"))
 			customDir = cmdline.GetParamValue("-outputdir");
 
-		UpgradeStudioModel(modelPath, modelVersionTarget, customDir);
+		eRMdlSubVersion cliSubVersion = eRMdlSubVersion::VERSION_12_1;
+		if (modelVersionTarget == MdlVersion::APEXLEGENDS && cmdline.HasParam("-version"))
+		{
+			const char* versionArg = cmdline.GetParamValue("-version");
+			cliSubVersion = ParseApexSubVersion(versionArg);
+			if (cliSubVersion == eRMdlSubVersion::VERSION_UNK)
+				Error("version '%s' is not currently supported\n", versionArg);
+		}
+
+		UpgradeStudioModel(modelPath, modelVersionTarget, customDir, cliSubVersion);
 	}
 
 	if (cmdline.HasParam("-convertsequence"))

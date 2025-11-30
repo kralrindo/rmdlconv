@@ -28,6 +28,8 @@ enum class eRMdlSubVersion : char
 	VERSION_16
 };
 
+const char* DescribeSubVersion(eRMdlSubVersion subVersion);
+
 // conversion to rmdl v10 (studio version 54)
 void ConvertMDL48To54(char* pMDL, const std::string& pathIn, const std::string& pathOut);
 void ConvertMDL49To54(char* pMDL, const std::string& pathIn, const std::string& pathOut);
@@ -35,13 +37,14 @@ void ConvertMDL53To54(char* pMDL, const std::string& pathIn, const std::string& 
 void ConvertRMDL8To10(char* pMDL, const std::string& pathIn, const std::string& pathOut);
 
 void ConvertRMDL120To10(char* pMDL, const size_t fileSize, const std::string& pathIn, const std::string& pathOut);
-void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string& pathOut);
+void ConvertRMDL121To10(char* pMDL, const std::string& pathIn, const std::string& pathOut, eRMdlSubVersion subVersion = eRMdlSubVersion::VERSION_12_1);
 
 // conversion to mdl v53
 void ConvertMDL52To53(char* pMDL, const std::string& pathIn, const std::string& pathOut);
 
 // VG
 void ConvertVGData_12_1(char* inputBuf, const std::string& filePath, const std::string& pathOut);
+void ConvertVGData_14(char* inputBuf, const std::string& filePath, const std::string& pathOut);
 
 // deprecated
 //void CreateVGFile_v8(const std::string& filePath);
@@ -53,5 +56,5 @@ void ConvertRSEQFrom10To7(char* inputBuf, char* inputExternalBuf, const std::str
 
 // model conversion handlers
 void UpgradeStudioModelTo53(std::string& modelPath, const char* outputDir);
-void UpgradeStudioModelTo54(std::string& modelPath, const char* outputDir);
-void UpgradeStudioModel(std::string& modelPath, int targetVersion, const char* outputDir);
+void UpgradeStudioModelTo54(std::string& modelPath, const char* outputDir, eRMdlSubVersion defaultSubVersion = eRMdlSubVersion::VERSION_12_1);
+void UpgradeStudioModel(std::string& modelPath, int targetVersion, const char* outputDir, eRMdlSubVersion defaultSubVersion = eRMdlSubVersion::VERSION_12_1);

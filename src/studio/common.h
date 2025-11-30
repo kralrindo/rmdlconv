@@ -1,5 +1,35 @@
 #pragma once
 
+#include <cstdint>
+
+namespace r5
+{
+	namespace v121
+	{
+		struct studiohdr_t;
+	}
+}
+
+extern bool g_isRigPhase;
+
+enum class StudioLogDomain : uint8_t
+{
+	MDL,
+	VG
+};
+
+extern StudioLogDomain g_logDomain;
+
+class StudioLogDomainScope
+{
+public:
+	explicit StudioLogDomainScope(StudioLogDomain newDomain);
+	~StudioLogDomainScope();
+
+private:
+	StudioLogDomain m_prev;
+};
+
 extern void ConvertSurfaceProperties(const char* const pOldBVHData, char* const pNewBVHData);
 
 extern void ConvertCollisionData_V120(const r5::v121::studiohdr_t* const oldStudioHdr, const char* const pOldBVHData);
