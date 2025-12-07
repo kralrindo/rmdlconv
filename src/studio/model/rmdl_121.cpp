@@ -1127,8 +1127,12 @@ static void ConvertRMDL12xTo10Impl(char* pMDL, const std::string& pathIn, const 
 		g_model.hdrV54()->bvhOffset = g_model.pData - g_model.pBase;
 
 		input.seek(oldHeader->bvhOffset, rseekdir::beg);
-		auto* compatHeader = reinterpret_cast<r5::v121::studiohdr_t*>(oldHeader);
-		ConvertCollisionData_V120(compatHeader, (char*)input.getPtr());
+		const char* const hdrBase = reinterpret_cast<const char*>(oldHeader);
+		const char* const vgFieldPtr = reinterpret_cast<const char*>(&oldHeader->vgLODOffset);
+		const size_t vgFieldOffset = static_cast<size_t>(vgFieldPtr - hdrBase);
+		const size_t vgDataAbsoluteOffset = vgFieldOffset + static_cast<size_t>(oldHeader->vgLODOffset);
+		const size_t bvhAbsoluteOffset = static_cast<size_t>(oldHeader->bvhOffset);
+		ConvertCollisionData_V120((char*)input.getPtr(), vgDataAbsoluteOffset, bvhAbsoluteOffset);
 	}
 
 	pHdr->length = g_model.pData - g_model.pBase;

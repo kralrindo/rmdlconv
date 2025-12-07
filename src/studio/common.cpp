@@ -114,7 +114,9 @@ static void CopyCollisionBuffers(r5::v8::mstudiocollmodel_t* const newCollModel,
 	g_model.pData += surfaceNamesSize;
 }
 
-void ConvertCollisionData_V120(const r5::v121::studiohdr_t* const oldStudioHdr, const char* const pOldBVHData)
+void ConvertCollisionData_V120(const char* const pOldBVHData,
+	size_t vgDataAbsoluteOffset,
+	size_t bvhAbsoluteOffset)
 {
 	g_model.hdrV54()->bvhOffset = g_model.pData - g_model.pBase;
 
@@ -197,13 +199,28 @@ void ConvertCollisionData_V120(const r5::v121::studiohdr_t* const oldStudioHdr, 
 		if (i != headerCount - 1) // if not the last header
 			nodeSize = pOldCollHeaders[i + 1].bvhNodeIndex - oldHeader->bvhNodeIndex;
 		else
-			nodeSize = offsetof(r5::v140::studiohdr_t, vgLODOffset) + oldStudioHdr->vgLODOffset - (oldStudioHdr->bvhOffset + oldHeader->bvhNodeIndex);
+		{
+			const size_t nodeAbsoluteOffset = bvhAbsoluteOffset + static_cast<size_t>(oldHeader->bvhNodeIndex);
+			if (vgDataAbsoluteOffset <= nodeAbsoluteOffset)
+			{
+				StudioLogf("collision node data exceeds available buffer (node=%zu, vg=%zu)\n",
+					nodeAbsoluteOffset, vgDataAbsoluteOffset);
+				nodeSize = 0;
+			}
+			else
+			{
+				nodeSize = static_cast<__int64>(vgDataAbsoluteOffset - nodeAbsoluteOffset);
+			}
+		}
 
 		const void* nodeData = reinterpret_cast<const char*>(pOldCollModel) + oldHeader->bvhNodeIndex;
 		ALIGN64(g_model.pData);
 		newHeader->bvhNodeIndex = g_model.pData - reinterpret_cast<char*>(pNewCollModel);
-		memcpy_s(g_model.pData, nodeSize, nodeData, nodeSize);
-		g_model.pData += nodeSize;
+		if (nodeSize > 0)
+		{
+			memcpy_s(g_model.pData, nodeSize, nodeData, nodeSize);
+			g_model.pData += nodeSize;
+		}
 	}
 }
 
