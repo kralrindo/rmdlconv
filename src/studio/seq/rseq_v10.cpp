@@ -4,6 +4,7 @@
 #include <pch.h>
 #include <studio/studio.h>
 #include <studio/versions.h>
+#include <studio/common.h>
 
 /*
 	Type:    RSEQ
@@ -79,13 +80,16 @@ void ConvertRSEQFrom10To7(char* buf, char* externalbuf, const std::string& fileP
 	AddToStringTable((char*)pSeq, &pSeq->szlabelindex, STRING_FROM_IDX(buf, oldSeqDesc->szlabelindex));
 	AddToStringTable((char*)pSeq, &pSeq->szactivitynameindex, STRING_FROM_IDX(buf, oldSeqDesc->szactivitynameindex));
 
+	const int numBlends = GetSequenceBlendCount(pSeq);
+
 	// copy these over directly because there is not really a struct.
-	if (oldSeqDesc->posekeyindex)
+	if (oldSeqDesc->posekeyindex && numBlends > 0)
 	{
 		printf("copying posekeys...\n");
 		pSeq->posekeyindex = g_model.pData - g_model.pBase;
-		memcpy(g_model.pData, PTR_FROM_IDX(r5::v8::mstudioseqdesc_t, oldSeqDesc, oldSeqDesc->posekeyindex), (pSeq->groupsize[0] + pSeq->groupsize[1]) * sizeof(float)); // doesn't copy correctly??
-		g_model.pData += (pSeq->groupsize[0] + pSeq->groupsize[1]) * sizeof(float);
+		const size_t copyCount = static_cast<size_t>(numBlends) * sizeof(float);
+		memcpy(g_model.pData, PTR_FROM_IDX(r5::v8::mstudioseqdesc_t, oldSeqDesc, oldSeqDesc->posekeyindex), copyCount);
+		g_model.pData += copyCount;
 	}
 
 	// copy over data from old events, nothing changed between 7.1 and 7 here.
@@ -111,7 +115,7 @@ void ConvertRSEQFrom10To7(char* buf, char* externalbuf, const std::string& fileP
 
 	pSeq->animindexindex = g_model.pData - g_model.pBase;
 	input.seek(oldSeqDesc->animindexindex, rseekdir::beg);
-	ConvertSequenceAnims((char*)oldSeqDesc, externalbuf, (char*)pSeq, (int*)input.getPtr(), pSeq->groupsize[0] * pSeq->groupsize[1], numBones);
+	ConvertSequenceAnims((char*)oldSeqDesc, externalbuf, (char*)pSeq, (int*)input.getPtr(), numBlends, numBones);
 
 	//this goes last
 	input.seek(oldSeqDesc->unkOffset, rseekdir::beg);

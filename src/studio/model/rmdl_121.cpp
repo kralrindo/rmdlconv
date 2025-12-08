@@ -899,11 +899,11 @@ void ConvertAnims_121(const char* const oldData, const int numlocalseq)
 		const r5::v8::mstudioseqdesc_t* const curOldSeqDesc = &oldSeqDescBase[i];
 		r5::v8::mstudioseqdesc_t* const curNewSeqDesc = &newSeqDescBase[i];
 
-		const int numAnims = curOldSeqDesc->groupsize[0] + curOldSeqDesc->groupsize[1];
+		const int numAnims = GetSequenceBlendCount(curOldSeqDesc);
 
-		if (numAnims)
+		if (numAnims > 0)
 		{
-			const size_t copyCount = numAnims * sizeof(int);
+			const size_t copyCount = static_cast<size_t>(numAnims) * sizeof(int);
 
 			const int* const oldBlendGroups = PTR_FROM_IDX(int, curOldSeqDesc, curOldSeqDesc->animindexindex);
 			int* const newBlendGroups = reinterpret_cast<int*>(g_model.pData);
@@ -923,9 +923,9 @@ void ConvertAnims_121(const char* const oldData, const int numlocalseq)
 			g_model.pData += copyCount;
 		}
 
-		if (curOldSeqDesc->posekeyindex) // todo: verify if curOldSeqDesc->cycleposeindex is always 0.
+		if (curOldSeqDesc->posekeyindex && numAnims > 0) // todo: verify if curOldSeqDesc->cycleposeindex is always 0.
 		{
-			const size_t copyCount = numAnims * sizeof(float);
+			const size_t copyCount = static_cast<size_t>(numAnims) * sizeof(float);
 			memcpy(g_model.pData, PTR_FROM_IDX(char, curOldSeqDesc, curOldSeqDesc->posekeyindex), copyCount);
 
 			curNewSeqDesc->posekeyindex = g_model.pData - reinterpret_cast<const char*>(curNewSeqDesc);

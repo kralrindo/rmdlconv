@@ -260,20 +260,31 @@ void ConvertCollisionData_V120_HeadersOnly(const char* const pOldBVHData, char* 
 // Animation data
 //-----------------------------------------------------------------------------
 
+int GetSequenceBlendCount(const r5::v8::mstudioseqdesc_t* seqDesc)
+{
+	if (!seqDesc)
+		return 0;
+
+	const int groupX = seqDesc->groupsize[0] > 0 ? seqDesc->groupsize[0] : 1;
+	const int groupY = seqDesc->groupsize[1] > 0 ? seqDesc->groupsize[1] : 1;
+
+	if (seqDesc->numblends > 0)
+		return seqDesc->numblends;
+
+	return groupX * groupY;
+}
+
 void CopyAnimRefData(const char* const pOldAnimRefData, char* const pNewAnimRefData, const int numlocalseq)
 {
 	for (int i = 0; i < numlocalseq; i++)
 	{
-		const r5::v8::mstudioseqdesc_t* oldSeqdesc = reinterpret_cast<const r5::v8::mstudioseqdesc_t*>(pOldAnimRefData);
-		r5::v8::mstudioseqdesc_t* newSeqDesc = reinterpret_cast<r5::v8::mstudioseqdesc_t*>(pNewAnimRefData);
+		const r5::v8::mstudioseqdesc_t* oldSeqdesc = reinterpret_cast<const r5::v8::mstudioseqdesc_t*>(pOldAnimRefData) + i;
+		r5::v8::mstudioseqdesc_t* newSeqDesc = reinterpret_cast<r5::v8::mstudioseqdesc_t*>(pNewAnimRefData) + i;
 
 		// For now we just copy it raw, we update the indices during the conversion
 		*newSeqDesc = *oldSeqdesc;
 
-		AddToStringTable((char*)newSeqDesc, &newSeqDesc->szlabelindex, &pOldAnimRefData[oldSeqdesc->szlabelindex]);
-		AddToStringTable((char*)newSeqDesc, &newSeqDesc->szactivitynameindex, &pOldAnimRefData[oldSeqdesc->szactivitynameindex]);
-
-		oldSeqdesc++;
-		newSeqDesc++;
+		AddToStringTable((char*)newSeqDesc, &newSeqDesc->szlabelindex, STRING_FROM_IDX(oldSeqdesc, oldSeqdesc->szlabelindex));
+		AddToStringTable((char*)newSeqDesc, &newSeqDesc->szactivitynameindex, STRING_FROM_IDX(oldSeqdesc, oldSeqdesc->szactivitynameindex));
 	}
 }
