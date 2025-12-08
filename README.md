@@ -20,8 +20,7 @@ partially supported:
 - Titanfall (v52) -> Titanfall 2 (v53)
 
 unsupported but planned:
-- Portal 2 (v49) -> Titanfall 2 (v53)
-- Titanfall (v52) -> Apex Legends Season 3 (v54 - rmdl v10)
+- Apex Legends Season 15-27 (v54 - rmdl v15-19) -> Apex Legends Season 3 (v54 - rmdl v10)
 
 
 ### supported commands
