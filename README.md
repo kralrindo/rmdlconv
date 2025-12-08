@@ -35,9 +35,9 @@ unsupported but planned:
 - "-convertsequence": unfinished
 - "-version": your model version you would like to convert
   Versions: 
-    1:  rmdl v8
-    2:  rmdl v12
-    3:  rmdl v12.1
-    4:  rmdl v12.2 - v12.5
-    5:  rmdl v13 - v13.1
-    6:  rmdl v14 - v14.1
+    1:  rmdl v8 
+    2:  rmdl v12 
+    3:  rmdl v12.1 
+    4:  rmdl v12.2 - v12.5 
+    5:  rmdl v13 - v13.1 
+    6:  rmdl v14 - v14.1 
