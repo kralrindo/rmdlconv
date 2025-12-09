@@ -295,7 +295,7 @@ void LegacyConversionHandling(CommandLine& cmdline)
 int main(int argc, char** argv)
 {
 
-	printf("rmdlconv - Copyright (c) %s, Authors: Rexx, Rikayam\n", &__DATE__[7]);
+	printf("rmdlconv - Copyright (c) %s, Rexx\n", &__DATE__[7]);
 
 	CommandLine cmdline(argc, argv);
 
