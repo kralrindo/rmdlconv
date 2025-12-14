@@ -64,6 +64,211 @@ static void ConvertVGData_Internal(char* buf, const std::string& filePath, const
 	size_t lodBufSize = vghInput.lodCount * sizeof(vg::rev1::ModelLODHeader_t);
 	short lodSubmeshCount = 0;
 
+	std::unique_ptr<char[]> lodBuf(new char[lodBufSize]);
+	rmem lods(lodBuf.get());
+
+	for (int i = 0; i < vghInput.lodCount; ++i)
+	{
+		size_t thisLodOffset = 0x18 + (i * sizeof(vg::rev2::ModelLODHeader_t)) + vghInput.lodOffset;
+		input.seek(thisLodOffset, rseekdir::beg);
+		vg::rev2::ModelLODHeader_t lodInput = input.read<vg::rev2::ModelLODHeader_t>();
+
+		vg::rev1::ModelLODHeader_t lod{ lodSubmeshCount, (short)lodInput.meshCount, lodInput.switchPoint };
+		lods.write(lod);
+
+		for (int j = 0; j < lodInput.meshCount; ++j)
+		{
+			size_t thisSubmeshOffset = thisLodOffset + offsetof(vg::rev2::ModelLODHeader_t, meshOffset) + lodInput.meshOffset + (j * sizeof(MeshHeaderT));
+			input.seek(thisSubmeshOffset, rseekdir::beg);
+			MeshHeaderT submesh = input.read<MeshHeaderT>();
+			vertexBufSize += static_cast<size_t>(submesh.vertBufferSize);
+			indexBufSize += static_cast<size_t>(submesh.indexCount) * 2;
+			extendedWeightsBufSize += static_cast<size_t>(submesh.externalWeightSize);
+			externalWeightsBufSize += static_cast<size_t>(submesh.legacyWeightCount) * sizeof(vvd::mstudioboneweight_t);
+			stripsBufSize += static_cast<size_t>(submesh.stripCount) * sizeof(OptimizedModel::StripHeader_t);
+		}
+
+		lodSubmeshCount += lodInput.meshCount;
+	}
+
+	std::unique_ptr<char[]> vertexBuf = std::make_unique<char[]>(vertexBufSize);
+	std::unique_ptr<char[]> indexBuf = std::make_unique<char[]>(indexBufSize);
+	std::unique_ptr<char[]> extendedWeightsBuf = std::make_unique<char[]>(extendedWeightsBufSize);
+	std::unique_ptr<char[]> externalWeightsBuf = std::make_unique<char[]>(externalWeightsBufSize);
+	std::unique_ptr<char[]> stripsBuf = std::make_unique<char[]>(stripsBufSize);
+	std::unique_ptr<char[]> meshBuf = std::make_unique<char[]>(lodSubmeshCount * sizeof(vg::rev1::MeshHeader_t));
+
+	printf("allocatedbuffers:\n");
+	printf("vertex: %lld\n", vertexBufSize);
+	printf("index: %lld\n", indexBufSize);
+	printf("extendedWeights: %lld\n", extendedWeightsBufSize);
+	printf("externalWeights: %lld\n", externalWeightsBufSize);
+
+	vertexBufSize = 0;
+	indexBufSize = 0;
+	extendedWeightsBufSize = 0;
+	externalWeightsBufSize = 0;
+	stripsBufSize = 0;
+
+	rmem submeshes(meshBuf.get());
+
+	for (int i = 0; i < vghInput.lodCount; ++i)
+	{
+		size_t thisLodOffset = 0x18 + (i * sizeof(vg::rev2::ModelLODHeader_t)) + vghInput.lodOffset;
+		input.seek(thisLodOffset, rseekdir::beg);
+		vg::rev2::ModelLODHeader_t lodInput = input.read<vg::rev2::ModelLODHeader_t>();
+
+		for (int j = 0; j < lodInput.meshCount; ++j)
+		{
+			size_t thisSubmeshOffset = thisLodOffset + offsetof(vg::rev2::ModelLODHeader_t, meshOffset) + lodInput.meshOffset + (j * sizeof(MeshHeaderT));
+			input.seek(thisSubmeshOffset, rseekdir::beg);
+
+			char* thisSubmeshPointer = reinterpret_cast<char*>(input.getPtr());
+			MeshHeaderT submeshInput = input.read<MeshHeaderT>();
+
+			vg::rev1::MeshHeader_t submesh{};
+			submesh.flags = submeshInput.flags;
+			submesh.vertCacheSize = static_cast<uint32_t>(submeshInput.vertCacheSize);
+			submesh.vertCount = static_cast<uint32_t>(submeshInput.vertCount);
+			submesh.indexCount = static_cast<uint32_t>(submeshInput.indexCount);
+			submesh.extraBoneWeightSize = static_cast<uint32_t>(submeshInput.externalWeightSize);
+			submesh.legacyWeightCount = static_cast<uint32_t>(submeshInput.legacyWeightCount);
+			submesh.stripCount = static_cast<uint32_t>(submeshInput.stripCount);
+			submesh.vertOffset = static_cast<uint32_t>(vertexBufSize);
+			submesh.indexOffset = static_cast<uint32_t>(indexBufSize) / sizeof(uint16_t);
+			submesh.extraBoneWeightOffset = static_cast<uint32_t>(extendedWeightsBufSize);
+			submesh.legacyWeightOffset = static_cast<uint32_t>(externalWeightsBufSize) / sizeof(vvd::mstudioboneweight_t);
+			submesh.stripOffset = static_cast<uint32_t>(stripsBufSize) / sizeof(OptimizedModel::StripHeader_t);
+			submeshes.write(submesh);
+
+			void* vtxPtr = thisSubmeshPointer + offsetof(MeshHeaderT, vertOffset) + submeshInput.vertOffset;
+			std::memcpy(vertexBuf.get() + vertexBufSize, vtxPtr, submeshInput.vertBufferSize);
+			vertexBufSize += submeshInput.vertBufferSize;
+
+			void* indexPtr = thisSubmeshPointer + offsetof(MeshHeaderT, indexOffset) + submeshInput.indexOffset;
+			std::memcpy(indexBuf.get() + indexBufSize, indexPtr, submeshInput.indexCount * 2);
+			indexBufSize += submeshInput.indexCount * 2;
+
+			void* extendedWeightsPtr = thisSubmeshPointer + offsetof(MeshHeaderT, externalWeightOffset) + submeshInput.externalWeightOffset;
+			std::memcpy(extendedWeightsBuf.get() + extendedWeightsBufSize, extendedWeightsPtr, submeshInput.externalWeightSize);
+			extendedWeightsBufSize += submeshInput.externalWeightSize;
+
+			void* externalWeightsPtr = thisSubmeshPointer + offsetof(MeshHeaderT, legacyWeightOffset) + submeshInput.legacyWeightOffset;
+			std::memcpy(externalWeightsBuf.get() + externalWeightsBufSize, externalWeightsPtr, submeshInput.legacyWeightCount * sizeof(vvd::mstudioboneweight_t));
+			externalWeightsBufSize += submeshInput.legacyWeightCount * sizeof(vvd::mstudioboneweight_t);
+
+			void* stripsPtr = thisSubmeshPointer + offsetof(MeshHeaderT, stripOffset) + submeshInput.stripOffset;
+			std::memcpy(stripsBuf.get() + stripsBufSize, stripsPtr, submeshInput.stripCount * sizeof(OptimizedModel::StripHeader_t));
+			stripsBufSize += submeshInput.stripCount * sizeof(OptimizedModel::StripHeader_t);
+		}
+	}
+
+	std::string rmdlPath = ChangeExtension(filePath, "rmdl");
+	char* boneRemapBuf = nullptr;
+	unsigned int boneRemapCount = 0;
+	char* unkDataBuf = nullptr;
+
+	if (std::filesystem::exists(rmdlPath) && GetFileSize(rmdlPath) > sizeof(StudioHdrT))
+	{
+		std::ifstream ifs(rmdlPath, std::ios::in | std::ios::binary);
+		StudioHdrT hdr;
+		ifs.read((char*)&hdr, sizeof(hdr));
+
+		if (hdr.boneStateCount > 0)
+		{
+			ifs.seekg(offsetof(StudioHdrT, boneStateOffset) + hdr.boneStateOffset, std::ios::beg);
+			boneRemapCount = hdr.boneStateCount;
+			boneRemapBuf = new char[boneRemapCount];
+			ifs.read(boneRemapBuf, boneRemapCount);
+		}
+
+		if (hdr.vgMeshCount > 0)
+		{
+			ifs.seekg(offsetof(StudioHdrT, vgMeshOffset) + hdr.vgMeshOffset, std::ios::beg);
+			unkDataBuf = new char[hdr.vgMeshCount * 0x30];
+			ifs.read(unkDataBuf, hdr.vgMeshCount * 0x30);
+		}
+
+		ifs.close();
+	}
+
+	vg::rev1::VertexGroupHeader_t vgh{};
+	vgh.id = 'GVt0';
+	vgh.version = 1;
+	vgh.boneStateChangeCount = boneRemapCount;
+	vgh.meshCount = lodSubmeshCount;
+	vgh.indexCount = indexBufSize / 2;
+	vgh.vertBufferSize = vertexBufSize;
+	vgh.extraBoneWeightSize = extendedWeightsBufSize;
+	vgh.lodCount = vghInput.lodCount;
+	vgh.unknownCount = vgh.meshCount / vgh.lodCount;
+	vgh.legacyWeightCount = externalWeightsBufSize / sizeof(vvd::mstudioboneweight_t);
+	vgh.stripCount = stripsBufSize / sizeof(OptimizedModel::StripHeader_t);
+
+	BinaryIO out;
+	out.open(pathOut, BinaryIOMode::Write);
+	out.write(vgh);
+
+	vgh.boneStateChangeOffset = out.tell();
+	if (boneRemapCount)
+		out.getWriter()->write(boneRemapBuf, boneRemapCount);
+
+	vgh.meshOffset = out.tell();
+	out.getWriter()->write(meshBuf.get(), lodSubmeshCount * sizeof(vg::rev1::MeshHeader_t));
+
+	vgh.indexOffset = out.tell();
+	out.getWriter()->write(indexBuf.get(), indexBufSize);
+
+	vgh.vertOffset = out.tell();
+	out.getWriter()->write(vertexBuf.get(), vertexBufSize);
+
+	vgh.extraBoneWeightOffset = out.tell();
+	out.getWriter()->write(extendedWeightsBuf.get(), extendedWeightsBufSize);
+
+	if (!unkDataBuf)
+		unkDataBuf = new char[vgh.unknownCount * 0x30]{};
+
+	vgh.unknownOffset = out.tell();
+	out.getWriter()->write(unkDataBuf, vgh.unknownCount * 0x30);
+
+	vgh.lodOffset = out.tell();
+	out.getWriter()->write(lodBuf.get(), lodBufSize);
+
+	vgh.legacyWeightOffset = out.tell();
+	out.getWriter()->write(externalWeightsBuf.get(), externalWeightsBufSize);
+
+	vgh.stripOffset = out.tell();
+	out.getWriter()->write(stripsBuf.get(), stripsBufSize);
+
+	vgh.dataSize = (unsigned int)out.tell();
+	out.seek(0, std::ios::beg);
+	out.write(vgh);
+	out.close();
+
+	printf("done! freeing buffers\n");
+
+	if (boneRemapBuf)
+		delete[] boneRemapBuf;
+
+	delete[] unkDataBuf;
+}
+
+template<typename MeshHeaderT, typename StudioHdrT>
+static void ConvertVGData_Rev3(char* buf, const std::string& filePath, const std::string& pathOut)
+{
+	StudioLogDomainScope logDomainScope(StudioLogDomain::VG);
+	rmem input(buf);
+
+	vg::rev2::VertexGroupHeader_t vghInput = input.read<vg::rev2::VertexGroupHeader_t>();
+
+	size_t vertexBufSize = 0;
+	size_t indexBufSize = 0;
+	size_t extendedWeightsBufSize = 0;
+	size_t externalWeightsBufSize = 0;
+	size_t stripsBufSize = 0;
+	size_t lodBufSize = vghInput.lodCount * sizeof(vg::rev1::ModelLODHeader_t);
+	short lodSubmeshCount = 0;
+
 	//char* lodBuf = new char[lodBufSize];
 	std::unique_ptr<char[]> lodBuf(new char[lodBufSize]);
 	rmem lods(lodBuf.get());
@@ -295,7 +500,7 @@ void ConvertVGData_12_1(char* inputBuf, const std::string& filePath, const std::
 
 void ConvertVGData_14(char* inputBuf, const std::string& filePath, const std::string& pathOut)
 {
-	ConvertVGData_Internal<vg::rev3::MeshHeader_t, r5::v140::studiohdr_t>(inputBuf, filePath, pathOut);
+	ConvertVGData_Rev3<vg::rev3::MeshHeader_t, r5::v140::studiohdr_t>(inputBuf, filePath, pathOut);
 }
 
 static MaterialShaderType_t GuessMaterialTypeFromName(const char* textureName)
