@@ -57,37 +57,45 @@ void StudioLogf(const char* fmt, ...)
 
 void ConvertSurfaceProperties(const char* const pOldBVHData, char* const pNewBVHData)
 {
-	const r5::v8::mstudiocollmodel_t* const pOldCollModel = reinterpret_cast<const r5::v8::mstudiocollmodel_t*>(pOldBVHData);
-	const r5::v8::mstudiocollmodel_t* const pNewCollModel = reinterpret_cast<const r5::v8::mstudiocollmodel_t*>(pNewBVHData);
+        const r5::v8::mstudiocollmodel_t* const pOldCollModel = reinterpret_cast<const r5::v8::mstudiocollmodel_t*>(pOldBVHData);
+        const r5::v8::mstudiocollmodel_t* const pNewCollModel = reinterpret_cast<const r5::v8::mstudiocollmodel_t*>(pNewBVHData);
 
-	const r5::v120::mstudiocollheader_t* const pOldCollHeaders = reinterpret_cast<const r5::v120::mstudiocollheader_t*>(pOldBVHData + sizeof(r5::v8::mstudiocollmodel_t));
+        const r5::v120::mstudiocollheader_t* const pOldCollHeaders = reinterpret_cast<const r5::v120::mstudiocollheader_t*>(pOldBVHData + sizeof(r5::v8::mstudiocollmodel_t));
 
-	// Only the first header appears to index into the new surface prop data with
-	// surfacePropDataIndex, subsequent ones have the same value as vertIndex.
-	// The reason for this in still unknown.
-	const r5::v120::mstudiocollheader_t& const oldHeader = pOldCollHeaders[0];
-	const r5::v120::dsurfacepropertydata_t* const oldSurfPropDatas = reinterpret_cast<const r5::v120::dsurfacepropertydata_t*>(&pOldBVHData[oldHeader.surfacePropDataIndex]);
+        // Only the first header appears to index into the new surface prop data with
+        // surfacePropDataIndex, subsequent ones have the same value as vertIndex.
+        // The reason for this in still unknown.
+        const r5::v120::mstudiocollheader_t& const oldHeader = pOldCollHeaders[0];
+        const r5::v120::dsurfacepropertydata_t* const oldSurfPropDatas = reinterpret_cast<const r5::v120::dsurfacepropertydata_t*>(&pOldBVHData[oldHeader.surfacePropDataIndex]);
 
-	const r5::v8::dsurfaceproperty_t* const pOldSurfProps = reinterpret_cast<const r5::v8::dsurfaceproperty_t*>(&pOldBVHData[pOldCollModel->surfacePropsIndex]);
-	r5::v8::dsurfaceproperty_t* const pNewSurfProps = reinterpret_cast<r5::v8::dsurfaceproperty_t*>(&pNewBVHData[pNewCollModel->surfacePropsIndex]);
+        const r5::v8::dsurfaceproperty_t* const pOldSurfProps = reinterpret_cast<const r5::v8::dsurfaceproperty_t*>(&pOldBVHData[pOldCollModel->surfacePropsIndex]);
+        r5::v8::dsurfaceproperty_t* const pNewSurfProps = reinterpret_cast<r5::v8::dsurfaceproperty_t*>(&pNewBVHData[pNewCollModel->surfacePropsIndex]);
 
-	// Newer models have an array of surface properties, so the size is actually
-	// surfacePropArrayCount * surfacePropCount, however V10 models can only store
-	// 1 array of them so we just take the first one. The new system also stores
-	// 2 surface properties per entry, from here we just take the first one.
-	for (int i = 0; i < oldHeader.surfacePropCount; i++)
-	{
-		const static bool useSecondProp = false;
+        // Calculate the actual number of dsurfaceproperty_t entries from the array size.
+        // This is different from oldHeader.surfacePropCount which is the count of entries
+        // in the dsurfacepropertydata_t array. We need to iterate over ALL dsurfaceproperty_t
+        // entries to properly convert their surfacePropId from an index into dsurfacepropertydata_t
+        // to the actual surface property ID. Failing to convert all entries causes climbing/grappling
+        // surface properties to break on converted models.
+        const int actualSurfacePropCount = (pOldCollModel->contentMasksIndex - pOldCollModel->surfacePropsIndex) / sizeof(r5::v8::dsurfaceproperty_t);
 
-		// On the V12 and higher models, the surfacePropId field gets used to index into the
-		// new dsurfacepropertydata_t array. On V10, this is the actual surfacePropId. V11 is
-		// unknown but that model version does exist in some S5 or S6 build.
-		const r5::v8::dsurfaceproperty_t& oldSurfProp = pOldSurfProps[i];
-		const r5::v120::dsurfacepropertydata_t& const oldSurfPropData = oldSurfPropDatas[useSecondProp + oldHeader.surfacePropArrayCount * oldSurfProp.surfacePropId];
+        // Newer models have an array of surface properties, so the size is actually
+        // surfacePropArrayCount * surfacePropCount, however V10 models can only store
+        // 1 array of them so we just take the first one. The new system also stores
+        // 2 surface properties per entry, from here we just take the first one.
+        for (int i = 0; i < actualSurfacePropCount; i++)
+        {
+                const static bool useSecondProp = false;
 
-		r5::v8::dsurfaceproperty_t& newSurfProp = pNewSurfProps[i];
-		newSurfProp.surfacePropId = oldSurfPropData.surfacePropId1;
-	}
+                // On the V12 and higher models, the surfacePropId field gets used to index into the
+                // new dsurfacepropertydata_t array. On V10, this is the actual surfacePropId. V11 is
+                // unknown but that model version does exist in some S5 or S6 build.
+                const r5::v8::dsurfaceproperty_t& oldSurfProp = pOldSurfProps[i];
+                const r5::v120::dsurfacepropertydata_t& const oldSurfPropData = oldSurfPropDatas[useSecondProp + oldHeader.surfacePropArrayCount * oldSurfProp.surfacePropId];
+
+                r5::v8::dsurfaceproperty_t& newSurfProp = pNewSurfProps[i];
+                newSurfProp.surfacePropId = oldSurfPropData.surfacePropId1;
+        }
 }
 
 static void CopyCollisionBuffers(r5::v8::mstudiocollmodel_t* const newCollModel, const r5::v8::mstudiocollmodel_t* const oldCollModel, 
