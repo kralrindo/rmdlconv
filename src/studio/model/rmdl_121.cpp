@@ -101,13 +101,11 @@ static void ConvertVGData_Internal(char* buf, const std::string& filePath, const
 	std::unique_ptr<char[]> stripsBuf(new char[stripsBufSize]);
 	std::unique_ptr<char[]> meshBuf(new char[lodSubmeshCount * sizeof(vg::rev1::MeshHeader_t)]);
 
-	printf("VG: allocatedbuffers:\n");
-	printf(
-		"vertex: %lld\nindex: %lld\nextendedWeights: %lld\nexternalWeights: %lld\n",
-		vertexBufSize,
-		indexBufSize,
-		extendedWeightsBufSize,
-		externalWeightsBufSize);
+	printf("allocatedbuffers:\n");
+	printf("vertex: %lld\n", vertexBufSize);
+	printf("index: %lld\n", indexBufSize);
+	printf("extendedWeights: %lld\n", extendedWeightsBufSize);
+	printf("externalWeights: %lld\n", externalWeightsBufSize);
 
 	// reuse vars for size added
 	vertexBufSize = 0;
